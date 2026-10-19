@@ -3,9 +3,9 @@ Proxy:
   Port: ""
 
 Appearance:
-  Taskbar Height: 70
+  Taskbar Height: 48
   # Adjust this so the system tray icons are not covered
-  Leftout Width: 600
+  Leftout Width: 350
 
 Lyrics:
   Folder: lyrics

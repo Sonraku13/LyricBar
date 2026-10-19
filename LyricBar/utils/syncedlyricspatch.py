@@ -95,7 +95,8 @@ def _get_lrc_musixmatch(self, t):
     body = r.json()["message"]["body"]
     tracks = body["track_list"]
     cmp_key = lambda _: f"{_['track']['track_name']} {_['track']['artist_name']}"
-    track_len_diff = lambda _: -abs(_["track"]["track_length"] - int(t.length) / 1000)
+    t_len = (int(t.length) / 1000) if t.length is not None else 0
+    track_len_diff = lambda _: -abs((_["track"]["track_length"] or 0) - t_len)
     track = _get_best_match_with_length(tracks, search_term, cmp_key, track_len_diff)
     if not track:
         return None
@@ -118,11 +119,12 @@ def _get_lrc_lrclib(self, t):
     tracks = r.json()
     if not tracks:
         return None
+    t_len = (int(t.length) / 1000) if t.length is not None else 0
     tracks = _sort_results_with_length(
         tracks,
         search_term,
         lambda _: f'{_["artistName"]} - {_["trackName"]}',
-        lambda _: 0 - abs(_["duration"] - int(t.length) / 1000),
+        lambda _: 0 - abs((_["duration"] or 0) - t_len),
     )
     _id = None
     for track in tracks:
@@ -142,11 +144,12 @@ def _search_track_netease(self, t):
     if not results:
         return None
     cmp_key = lambda _: f"{_.get('name')} {_.get('artists')[0].get('name')}"
+    t_len = (int(t.length) / 1000) if t.length is not None else 0
     track = _get_best_match_with_length(
         results,
         search_term,
         cmp_key,
-        lambda _: 0 - abs(_["duration"] / 1000 - int(t.length) / 1000),
+        lambda _: 0 - abs((_["duration"] or 0) / 1000 - t_len),
     )
     self.session.cookies.update(response.cookies)
     self.session.headers.update({"referer": response.url})
@@ -172,11 +175,12 @@ def _get_lrc_deezer(self, t):
     url = self.SEARCH_ENDPOINT + search_term.replace(" ", "+")
     search_results = self.session.get(url).json()
     cmp_key = lambda _: f"{_.get('title')} {_.get('artist').get('name')}"
+    t_len = (int(t.length) / 1000) if t.length is not None else 0
     track = _get_best_match_with_length(
         search_results.get("data", []),
         search_term,
         cmp_key,
-        lambda _: 0 - abs(_["duration"] - int(t.length) / 1000),
+        lambda _: 0 - abs((_["duration"] or 0) - t_len),
     )
     if not track:
         return None
@@ -206,11 +210,12 @@ def _get_lrc_megalobiz(self, t):
         length = match.group(2)
         length = int(length[1:3]) * 60 + int(length[4:6]) + int(length[7:9]) / 100
         candidates.append({"raw": a, "name": match.group(1), "length": length})
+    t_len = (int(t.length) / 1000) if t.length is not None else 0
     a_tag = _get_best_match_with_length(
         candidates,
         search_term,
         lambda _: _["name"],
-        lambda _: _["length"] - int(t.length) / 1000,
+        lambda _: _["length"] - t_len,
     )
     if not a_tag:
         return None
