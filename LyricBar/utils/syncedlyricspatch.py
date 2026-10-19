@@ -233,6 +233,10 @@ logger = logging.getLogger(__name__)
 def _is_lrc_valid_crude(lrc, allow_plain_format=False, check_translation=False):
     if not lrc:
         return False
+    if hasattr(lrc, "synced"):
+        lrc = lrc.synced or lrc.unsynced or ""
+    elif not isinstance(lrc, str):
+        lrc = str(lrc)
     lines = lrc.split("\n")
     if len(lines) > 10:
         lines = lines[5:10]
@@ -293,7 +297,10 @@ def _search(
             logger.info(
                 f'synced-lyrics found for "{search_track}" on {provider.__class__.__name__}'
             )
-            lrc = _l
+            if hasattr(_l, "synced"):
+                lrc = _l.synced or _l.unsynced
+            else:
+                lrc = _l
             break
         else:
             logger.debug(

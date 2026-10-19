@@ -50,4 +50,4 @@ Themes:
   Folder: themes
 
   # Format "{relative file path minus '.py'} - {theme name}"
-  Default: "Default - LyricBar theme"
+  Default: "Default - white"
