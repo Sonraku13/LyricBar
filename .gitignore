@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.pyo
+lyrics/
+LyricBar-0.4.0/
+*.lock
+.vscode/

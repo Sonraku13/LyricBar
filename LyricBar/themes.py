@@ -111,15 +111,74 @@ def load_themes():
 
 load_themes()
 
+from io import BytesIO
+from PIL import Image
+
+def extract_m3_palette(thumb_bytes: bytes):
+    if not thumb_bytes:
+        return None
+    try:
+        img = Image.open(BytesIO(thumb_bytes)).convert("RGB")
+        small = img.resize((48, 48), Image.Resampling.LANCZOS)
+        colors = small.getcolors(maxcolors=2304)
+        if not colors:
+            return None
+        colors.sort(key=lambda x: x[0], reverse=True)
+        dominant_rgb = colors[0][1]
+
+        def luminance(rgb):
+            return 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
+
+        def to_hex(rgb):
+            return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
+
+        # Material 3 accent: find the most vibrant/saturated color among dominant candidates
+        best_accent = dominant_rgb
+        max_saturation = -1
+        for count, rgb in colors[:15]:
+            r, g, b = rgb[0] / 255.0, rgb[1] / 255.0, rgb[2] / 255.0
+            mx, mn = max(r, g, b), min(r, g, b)
+            sat = (mx - mn) / mx if mx > 0 else 0
+            if sat > max_saturation and 40 < luminance(rgb) < 220:
+                max_saturation = sat
+                best_accent = rgb
+
+        accent_hex = to_hex(best_accent)
+        accent_lum = luminance(best_accent)
+
+        # High-contrast readable text
+        text_color = "#ffffff" if accent_lum < 160 else "#121212"
+
+        # Frosted glass background: translucent dark with slight tint of dominant color (Telegram translucent style)
+        tint_r = int(dominant_rgb[0] * 0.15 + 18 * 0.85)
+        tint_g = int(dominant_rgb[1] * 0.15 + 18 * 0.85)
+        tint_b = int(dominant_rgb[2] * 0.15 + 20 * 0.85)
+        frosted_bg = f"#{tint_r:02x}{tint_g:02x}{tint_b:02x}cc"  # 80% opacity
+
+        return {
+            "font-color": text_color,
+            "shadow-color": accent_hex,
+            "progress-color": accent_hex,
+            "progress-line-color": accent_hex + "44",
+            "background-color": frosted_bg,
+            "line-color": "#ffffff18",
+            "line-width": 0.5,
+        }
+    except Exception as e:
+        print(f"Error extracting M3 palette: {e}")
+        return None
+
 def get_style(track: TrackInfo):
     stl = STYLES["default"].copy()
     stl_name = "default"
+    matched = False
     
     for name, style in STYLES.items():
         if name == "default" or "rule" not in style:
             continue
         if "rule" in style and style["rule"](track):
             stl_name = name
+            matched = True
             print(f"Matching theme {name}")
             stl.update(style)
             if "format" in style:
@@ -130,8 +189,16 @@ def get_style(track: TrackInfo):
                 else:
                     stl["font-family"] = ", ".join(list(filter(lambda x: x != " ", [_.strip() for _ in style["font-family"].split(",") + STYLES["default"]["font-family"].split(",")])))
             break
-    # print(DEFAULT_THEME)
-    if stl_name == "default" and (DEFAULT_THEME is not None and DEFAULT_THEME in STYLES):
+
+    # If no specific artist rule matched, dynamically apply Frosted Material 3 Palette from album cover
+    if not matched and track and getattr(track, "thumbnail_bytes", None):
+        dynamic_pal = extract_m3_palette(track.thumbnail_bytes)
+        if dynamic_pal:
+            stl_name = "Frosted Material 3"
+            stl.update(dynamic_pal)
+            matched = True
+
+    if not matched and (DEFAULT_THEME is not None and DEFAULT_THEME in STYLES):
         stl_name = DEFAULT_THEME.replace("\\", "/")
         style = STYLES[stl_name]
         # print(f"Using Default theme {stl_name}")

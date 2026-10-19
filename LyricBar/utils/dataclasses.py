@@ -19,6 +19,7 @@ class TrackInfo:
     length: int = None
     is_music: bool = True
     _hash: str = None
+    thumbnail_bytes: bytes = None
 
     def __str__(self):
         return f"{self.artist} - {self.title} [{self.id}] ({self.length})"

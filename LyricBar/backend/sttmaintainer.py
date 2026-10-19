@@ -93,26 +93,27 @@ class STTMaintainer(QObject):
         
         self.model = None
         self.recognizer = None
-        try:
-            self.model = Model(STT_MODEL_PATH)
-            self.recognizer = KaldiRecognizer(self.model, 16000)
-        except:
-            print("Failed to load STT model")
-        
-        mic = pyaudio.PyAudio()
-
         self.stream = None
-        device_index = None
-        
-        for i in range(0, mic.get_device_count()):
-            if STT_TRACKING_INPUT in mic.get_device_info_by_index(i)['name']:
-                device_index = i
-                break
-        if device_index is None or STT_TRACKING_INPUT == "":
-            print("Failed to find System Loopback device")
-        else:
-            print(f"Found System Loopback device {STT_TRACKING_INPUT} at index {device_index}")
-            self.stream = mic.open(format=pyaudio.paInt16, channels=1, rate=16000, input=True, frames_per_buffer=8192, input_device_index=device_index)
+
+        if STT_MODEL_PATH:
+            try:
+                self.model = Model(STT_MODEL_PATH)
+                self.recognizer = KaldiRecognizer(self.model, 16000)
+            except Exception:
+                print("Failed to load STT model")
+
+        if self.model and STT_TRACKING_INPUT:
+            try:
+                mic = pyaudio.PyAudio()
+                device_index = None
+                for i in range(0, mic.get_device_count()):
+                    if STT_TRACKING_INPUT in mic.get_device_info_by_index(i)['name']:
+                        device_index = i
+                        break
+                if device_index is not None:
+                    self.stream = mic.open(format=pyaudio.paInt16, channels=1, rate=16000, input=True, frames_per_buffer=8192, input_device_index=device_index)
+            except Exception as e:
+                print(f"Failed to initialize mic: {e}")
             
         self.start_signal.connect(self.start_listen)
         self.stop_signal.connect(self.stop_listen)

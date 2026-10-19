@@ -1,12 +1,16 @@
+import asyncio
 from datetime import datetime, timedelta
 import json
 import logging
-import subprocess
-import asyncio
 import re
+import subprocess
+import time
+
+from PyQt5.QtCore import QThread, pyqtSignal
 from winsdk.windows.media.control import (
     GlobalSystemMediaTransportControlsSessionManager as MediaManager,
 )
+from winsdk.windows.storage.streams import DataReader
 
 from .nowplaying import NowPlaying
 from ..globalvariables import TRACKING_APP
@@ -29,6 +33,28 @@ def _clean_track_title(title: str, artist: str = None) -> str:
     return title if title else None
 
 
+class SystemPollingWorker(QThread):
+    info_signal = pyqtSignal(object)
+
+    def __init__(self, system):
+        super().__init__()
+        self.system = system
+        self.running = True
+
+    def run(self):
+        while self.running:
+            try:
+                info = asyncio.run(self.system.get_now_playing_info())
+                self.info_signal.emit(info)
+            except Exception as e:
+                logging.debug(f"Worker polling error: {e}")
+            time.sleep(self.system.sync_interval / 1000.0)
+
+    def stop(self):
+        self.running = False
+        self.wait()
+
+
 class NowPlayingSystem(NowPlaying):
     def __init__(self, sync_interval=50, update_callback=None, offset=0, tracking_app=TRACKING_APP):
         super().__init__(sync_interval, update_callback)
@@ -38,6 +64,14 @@ class NowPlayingSystem(NowPlaying):
         self.session = None
         self.is_initialized = False
         self.offset = offset
+        self._last_track_key = None
+        self._last_thumb_bytes = None
+        self.worker = SystemPollingWorker(self)
+        self.worker.info_signal.connect(self.process_info)
+
+    def start_loop(self):
+        self.started = True
+        self.worker.start()
 
     def update_check(self, old_playing_info, new_playing_info):
         if old_playing_info is None:
@@ -60,64 +94,62 @@ class NowPlayingSystem(NowPlaying):
             return False
         return True
 
+    def process_info(self, info):
+        if not self.sync_mutex.tryLock(0):
+            return
+        try:
+            if not self.is_initialized and (info is None or not info.is_playing):
+                logging.info("WAITING FOR SPOTIFY")
+                self.is_initialized = True
+                self.playing_info = None
+                if self.update_callback is not None:
+                    self.update_callback(PlayingStatusTrigger.PAUSE)
+                return
+            if info is None and self.playing_info is not None:
+                logging.info("SPOTIFY DOWN")
+                self.is_initialized = True
+                self.playing_info = None
+                if self.update_callback is not None:
+                    self.update_callback(PlayingStatusTrigger.PAUSE)
+                return
+            if info is None:
+                return
+            if not info.is_playing and (self.playing_info is not None and self.playing_info.is_playing):
+                logging.info("PAUSING")
+                self.playing_info.is_playing = False
+                if self.update_callback is not None:
+                    self.update_callback(PlayingStatusTrigger.PAUSE)
+                return
+            if info.is_playing and (self.playing_info is None or self.track_check(self.playing_info, info)):
+                logging.info(f"NEW TRACK: {info.current_track}")
+                if self.playing_info is not None:
+                    self.playing_info.update(info)
+                else:
+                    self.playing_info = info
+                if self.update_callback is not None and (self.playing_info.current_track_artist != "" or self.playing_info.current_track_title != ""):
+                    self.update_callback(PlayingStatusTrigger.NEW_TRACK)
+                return
+            if info.is_playing and not self.playing_info.is_playing:
+                logging.info("RESUMING")
+                if self.playing_info is not None:
+                    self.playing_info.update(info)
+                else:
+                    self.playing_info = info
+                if self.update_callback is not None:
+                    self.update_callback(PlayingStatusTrigger.RESUME)
+            if info.is_playing and self.playing_info and self.update_check(self.playing_info, info):
+                logging.info("SYNCING")
+                if self.playing_info is not None:
+                    self.playing_info.update(info)
+                else:
+                    self.playing_info = info
+        finally:
+            self.sync_mutex.unlock()
+
     def sync(self):
         logging.debug("TRY SYNC WITH SYSTEM")
-        if not self.sync_mutex.tryLock(0):
-            logging.debug("SYNCING SKIPPED")
-            return
         info = asyncio.run(self.get_now_playing_info())
-        
-        if not self.is_initialized and (info is None or not info.is_playing):
-            logging.info("WAITING FOR SPOTIFY")
-            self.is_initialized = True
-            self.playing_info = None
-            if self.update_callback is not None:
-                self.update_callback(PlayingStatusTrigger.PAUSE)
-            self.sync_mutex.unlock()
-            return
-        if info is None and self.playing_info is not None:
-            logging.info("SPOTIFY DOWN")
-            self.is_initialized = True
-            self.playing_info = None
-            if self.update_callback is not None:
-                self.update_callback(PlayingStatusTrigger.PAUSE)
-            self.sync_mutex.unlock()
-            return
-        if info is None:
-            self.sync_mutex.unlock()
-            return
-        if not info.is_playing and (self.playing_info is not None and self.playing_info.is_playing):
-            logging.info("PAUSING")
-            self.playing_info.is_playing = False
-            if self.update_callback is not None:
-                self.update_callback(PlayingStatusTrigger.PAUSE)
-            self.sync_mutex.unlock()
-            return
-        if info.is_playing and (self.playing_info is None or self.track_check(self.playing_info, info)):
-            logging.info("NEW TRACK: ", info.current_track)
-            if self.playing_info is not None:
-                self.playing_info.update(info)
-            else:
-                self.playing_info = info
-            if self.update_callback is not None and (self.playing_info.current_track_artist != "" or self.playing_info.current_track_title != ""):
-                self.update_callback(PlayingStatusTrigger.NEW_TRACK)
-            self.sync_mutex.unlock()
-            return
-        if info.is_playing and not self.playing_info.is_playing:
-            logging.info("RESUMING")
-            if self.playing_info is not None:
-                self.playing_info.update(info)
-            else:
-                self.playing_info = info
-            if self.update_callback is not None:
-                self.update_callback(PlayingStatusTrigger.RESUME)
-        if info.is_playing and self.playing_info and self.update_check(self.playing_info, info):
-            logging.info("SYNCING")
-            if self.playing_info is not None:
-                self.playing_info.update(info)
-            else:
-                self.playing_info = info
-        self.sync_mutex.unlock()
+        self.process_info(info)
 
     async def get_media_manager(self):
         return await MediaManager.request_async()
@@ -197,6 +229,28 @@ class NowPlayingSystem(NowPlaying):
             track_artist = info_dict.get("artist")
             if track_artist:
                 track_artist = track_artist.strip()
+
+            thumb_bytes = None
+            track_key = (track_artist, track_title)
+            if track_key == self._last_track_key and self._last_thumb_bytes is not None:
+                thumb_bytes = self._last_thumb_bytes
+            elif "thumbnail" in info_dict and info_dict["thumbnail"] is not None:
+                try:
+                    thumb_stream = await info_dict["thumbnail"].open_read_async()
+                    size = thumb_stream.size
+                    if size > 0:
+                        reader = DataReader(thumb_stream)
+                        await reader.load_async(size)
+                        buf = bytearray(size)
+                        reader.read_bytes(buf)
+                        thumb_bytes = bytes(buf)
+                        reader.close()
+                    thumb_stream.close()
+                except Exception as e:
+                    logging.debug(f"Failed to read SMTC thumbnail: {e}")
+                self._last_track_key = track_key
+                self._last_thumb_bytes = thumb_bytes
+
             return PlayingInfo(
                 current_track=TrackInfo(
                     artist=track_artist,
@@ -207,6 +261,7 @@ class NowPlayingSystem(NowPlaying):
                         if "max_seek_time" in info_dict
                         else None
                     ),
+                    thumbnail_bytes=thumb_bytes,
                 ),
                 # current_begin_time=(
                 #     (datetime.timestamp(info_dict["last_updated_time"]) - info_dict["position"]/ timedelta(milliseconds=1) + self.offset)
