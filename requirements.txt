@@ -1,0 +1,11 @@
+syncedlyrics
+pylrc
+PyQt5
+websocket_server
+vosk
+pyaudio
+numpy
+pyyaml
+syrics
+PyQt5-Frameless-Window
+
