@@ -110,37 +110,62 @@ def load_themes():
                 new_styles[theme_file.replace(".py", "").replace("\\", "/") + " - " + k] = new_styles.pop(k)
             STYLES.update(new_styles)
 
-    print("Loaded Styles:", STYLES.keys())
+    # Safe logging instead of bare print that crashes pythonw.exe
+    # print("Loaded Styles:", STYLES.keys())
 
 load_themes()
 
-def get_style(track: TrackInfo):
+def get_style(track: TrackInfo = None, theme_name: str = None):
     stl = STYLES["default"].copy()
     stl_name = "default"
-    
-    for name, style in STYLES.items():
-        if name == "default" or "rule" not in style:
-            continue
-        if "rule" in style and style["rule"](track):
-            stl_name = name
-            print(f"Matching theme {name}")
+
+    # 1. If explicit theme requested, prioritize it
+    if theme_name:
+        target_name = theme_name.replace("\\", "/")
+        if target_name in STYLES:
+            stl_name = target_name
+            stl.update(STYLES[target_name])
+            if "format" in STYLES[target_name]:
+                fmt = STYLES[target_name]["format"]
+                stl["format"] = lambda line: fmt(STYLES["default"]["format"](line))
+            for key, value in stl.items():
+                if "color" in key and isinstance(value, str) and re.match(r"^#[0-9a-fA-F]{3}([0-9a-fA-F]{3,5})?$", value):
+                    stl[key] = hex_to_rgba(value)
+            stl.update({"name": stl_name})
+            return stl
+
+    # 2. Match track rules if track info is present
+    if track is not None:
+        for name, style in STYLES.items():
+            if name == "default" or "rule" not in style:
+                continue
+            try:
+                if style["rule"](track):
+                    stl_name = name
+                    stl.update(style)
+                    if "format" in style:
+                        fmt = style["format"]
+                        stl["format"] = lambda line: fmt(STYLES["default"]["format"](line))
+                    if "font-family" in style:
+                        if any([_ in style["font-family"].lower() for _ in [".ttf", ".otf"]]) and os.path.exists(style["font-family"]):
+                            stl["font-family"] = style["font-family"]
+                        else:
+                            stl["font-family"] = ", ".join(list(filter(lambda x: x != " ", [_.strip() for _ in style["font-family"].split(",") + STYLES["default"]["font-family"].split(",")])))
+                    break
+            except Exception:
+                pass
+
+    # 3. Fallback to default theme from settings
+    if stl_name == "default" and DEFAULT_THEME:
+        norm_default = DEFAULT_THEME.replace("\\", "/")
+        if norm_default in STYLES:
+            stl_name = norm_default
+            style = STYLES[stl_name]
             stl.update(style)
             if "format" in style:
-                stl["format"] = lambda line: (style["format"](STYLES["default"]["format"](line)))
-            if "font-family" in style:
-                if any([_ in style["font-family"].lower() for _ in [".ttf", ".otf"]]) and os.path.exists(style["font-family"]):
-                        stl["font-family"] = style["font-family"]
-                else:
-                    stl["font-family"] = ", ".join(list(filter(lambda x: x != " ", [_.strip() for _ in style["font-family"].split(",") + STYLES["default"]["font-family"].split(",")])))
-            break
-    # print(DEFAULT_THEME)
-    if stl_name == "default" and (DEFAULT_THEME is not None and DEFAULT_THEME in STYLES):
-        stl_name = DEFAULT_THEME.replace("\\", "/")
-        style = STYLES[stl_name]
-        # print(f"Using Default theme {stl_name}")
-        stl.update(STYLES[stl_name])
-        if "format" in style:
-            stl["format"] = lambda line: (style["format"](STYLES["default"]["format"](line)))         
+                fmt = style["format"]
+                stl["format"] = lambda line: fmt(STYLES["default"]["format"](line))
+
     for key, value in stl.items():
         if 'color' in key:
             if isinstance(value, str) and re.match(r'^#[0-9a-fA-F]{3}([0-9a-fA-F]{3,5})?$', value):

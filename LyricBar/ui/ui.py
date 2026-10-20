@@ -471,33 +471,40 @@ class SystemTrayIcon(QSystemTrayIcon):
         themeGroup.setExclusive(True)
 
         def switch_theme(name):
-            if os.path.exists("settings.yaml"):
-                try:
-                    with open("settings.yaml", "r", encoding="utf-8") as f:
-                        content = f.read()
-                    import re
-                    new_content = re.sub(
-                        r'(Default:\s*)["\'].*?["\']',
-                        rf'\1"{name}"',
-                        content,
-                    )
-                    with open("settings.yaml", "w", encoding="utf-8") as f:
-                        f.write(new_content)
-                except Exception as e:
-                    logging.error(f"Failed to update settings.yaml: {e}")
+            try:
+                name_norm = name.replace("\\", "/")
+                settings_file = "settings.yaml"
+                if os.path.exists(settings_file):
+                    lines = []
+                    with open(settings_file, "r", encoding="utf-8") as f:
+                        for line in f:
+                            if line.strip().startswith("Default:"):
+                                indent = line[:line.find("Default:")]
+                                lines.append(f'{indent}Default: "{name_norm}"\n')
+                            else:
+                                lines.append(line)
+                    with open(settings_file, "w", encoding="utf-8") as f:
+                        f.writelines(lines)
 
-            load_themes()
-            parent.updateStyle(
-                get_style(parent.now_playing.current_track), force_reload=True
-            )
-            parent.toast(f"Theme: {name}")
+                load_themes()
+                new_style = get_style(track=parent.now_playing.current_track, theme_name=name_norm)
+                parent.updateStyle(new_style, force_reload=True)
+                if hasattr(parent, "updateLyrics"):
+                    parent.updateLyrics(anim=False)
+                if hasattr(parent, "label") and parent.label:
+                    parent.label.update()
+                parent.toast(f"Theme: {name_norm}")
+            except Exception as e:
+                logging.error(f"Failed to switch theme: {e}")
 
-        for theme_key in STYLES.keys():
+        norm_default = (DEFAULT_THEME or "").replace("\\", "/")
+        for theme_key in sorted(STYLES.keys()):
             if theme_key == "default":
                 continue
             action = themeMenu.addAction(theme_key)
             action.setCheckable(True)
-            if theme_key == DEFAULT_THEME:
+            norm_key = theme_key.replace("\\", "/")
+            if norm_key == norm_default:
                 action.setChecked(True)
             themeGroup.addAction(action)
             action.triggered.connect(lambda checked, k=theme_key: switch_theme(k))
@@ -505,15 +512,22 @@ class SystemTrayIcon(QSystemTrayIcon):
         self.setContextMenu(menu)
         exitAction.triggered.connect(self.exit)
         swtichDesktopAction.triggered.connect(lambda: parent.switchDesktop(True))
-        reloadThemeAction.triggered.connect(
-            lambda: [
-                load_themes(),
+
+        def reload_all_themes():
+            try:
+                load_themes()
                 parent.updateStyle(
                     get_style(parent.now_playing.current_track), force_reload=True
-                ),
-                parent.toast("Themes Reloaded"),
-            ]
-        )
+                )
+                if hasattr(parent, "updateLyrics"):
+                    parent.updateLyrics(anim=False)
+                if hasattr(parent, "label") and parent.label:
+                    parent.label.update()
+                parent.toast("Themes Reloaded")
+            except Exception as e:
+                logging.error(f"Failed to reload themes: {e}")
+
+        reloadThemeAction.triggered.connect(reload_all_themes)
 
     def exit(self):
         QCoreApplication.exit()

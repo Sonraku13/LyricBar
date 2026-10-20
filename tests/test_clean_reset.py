@@ -29,5 +29,13 @@ class TestCleanReset(unittest.TestCase):
         self.assertEqual(len(lyrics.lines), 1)
         self.assertEqual(lyrics.lines[0].text, "'Cause you know that I can't do this on my own")
 
+    def test_get_style_by_theme_name(self):
+        style = get_style(theme_name="Default - black")
+        self.assertEqual(style["name"], "Default - black")
+
+        # Test Windows backslash normalization
+        style_win = get_style(theme_name="Artists\\CharliXCX - brat")
+        self.assertEqual(style_win["name"], "Artists/CharliXCX - brat")
+
 if __name__ == "__main__":
     unittest.main()
