@@ -17,7 +17,7 @@ class NowPlayingSystem(NowPlaying):
     def __init__(self, sync_interval=50, update_callback=None, offset=0, tracking_app=TRACKING_APP):
         super().__init__(sync_interval, update_callback)
         self.manager = asyncio.run(self.get_media_manager())
-        self.tracking_app = tracking_app
+        self.tracking_app = tracking_app or "any"
         self.app_id = None
         self.session = None
         self.is_initialized = False
