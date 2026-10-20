@@ -145,6 +145,24 @@ if "Themes" in config:
     if "Default" in config["Themes"]:
         DEFAULT_THEME = config["Themes"]["Default"]
 
+
+def reload_settings():
+    global TAKSBAR_HEIGHT, LEFTOUT_WIDTH, SHOW_PROGRESS_BAR, PLAYING_INFO_PROVIDER, TRACKING_APP, DEFAULT_THEME
+    if not os.path.exists("settings.yaml"):
+        return
+    try:
+        with open("settings.yaml", "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f)
+        if "Themes" in cfg and "Default" in cfg["Themes"]:
+            DEFAULT_THEME = cfg["Themes"]["Default"]
+        if "Playing Info" in cfg:
+            if "Provider" in cfg["Playing Info"]:
+                PLAYING_INFO_PROVIDER = cfg["Playing Info"]["Provider"]
+            if "Tracking App" in cfg["Playing Info"]:
+                TRACKING_APP = cfg["Playing Info"]["Tracking App"]
+    except Exception as e:
+        logging.error(f"Failed to reload settings: {e}")
+
 if "Proxy" in config:
     if (
         "Host" in config["Proxy"]

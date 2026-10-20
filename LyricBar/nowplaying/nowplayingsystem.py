@@ -108,23 +108,49 @@ class NowPlayingSystem(NowPlaying):
 
     async def get_app_id(self):
         logging.debug("GETTING APP ID")
-        sessions = self.manager.get_sessions()
-        sessions = [session.source_app_user_model_id for session in sessions]
-        # logging.info(sessions)
-        if not any([self.tracking_app in _ for _ in sessions]):
+        try:
+            sessions = self.manager.get_sessions()
+        except Exception as e:
+            logging.debug(f"Error getting sessions: {e}")
             return None
-        amuids = subprocess.check_output(
-            ["powershell.exe", "Get-StartApps | ConvertTo-Json"],
-            shell=False,
-            creationflags=subprocess.CREATE_NO_WINDOW,
-        )
-        amuids = json.loads(amuids.decode("gbk").replace("\r\n", "\n"))
+
+        candidate_ids = [s.source_app_user_model_id for s in sessions if s and s.source_app_user_model_id]
         
-        rets = []
-        for app in amuids:
-            if self.tracking_app.lower() in app["AppID"].split("\\")[-1].lower():
-                rets.append(app["AppID"].split("\\")[-1])
-        return None if len(rets) == 0 else min(rets, key=len)
+        # 1. Direct match on active media session App ID
+        target_lower = self.tracking_app.lower()
+        for app_id in candidate_ids:
+            if target_lower in app_id.lower():
+                return app_id
+
+        # 2. Check PowerShell Get-StartApps if direct match not found
+        try:
+            amuids = subprocess.check_output(
+                ["powershell.exe", "Get-StartApps | ConvertTo-Json"],
+                shell=False,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            amuids = json.loads(amuids.decode("utf-8", errors="ignore").replace("\r\n", "\n"))
+            if isinstance(amuids, dict):
+                amuids = [amuids]
+            rets = []
+            for app in amuids:
+                app_name = app.get("Name", "")
+                app_target = app.get("AppID", "").split("\\")[-1]
+                if target_lower in app_target.lower() or target_lower in app_name.lower():
+                    # check if this app is currently an active session
+                    for sess_id in candidate_ids:
+                        if app_target.lower() in sess_id.lower():
+                            rets.append(sess_id)
+            if rets:
+                return min(rets, key=len)
+        except Exception as e:
+            logging.debug(f"Failed to query Get-StartApps: {e}")
+
+        # 3. Fallback: if tracking_app is empty or 'any', or exactly one session is active
+        if target_lower in ["any", "*", "all", ""] and candidate_ids:
+            return candidate_ids[0]
+
+        return None
 
     async def get_now_playing_info(self):
         if self.app_id is None:
@@ -137,6 +163,10 @@ class NowPlayingSystem(NowPlaying):
                 filter(lambda s: s.source_app_user_model_id == self.app_id, sessions),
                 None,
             )
+            # If session stale/closed, reset app_id to search again
+            if self.session is None:
+                self.app_id = None
+                return None
         if self.session is not None:
             info_dict = dict()
             try:

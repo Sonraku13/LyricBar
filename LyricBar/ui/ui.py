@@ -4,6 +4,7 @@ import sys
 from PyQt5.QtCore import QCoreApplication, QMutex, Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QCursor, QIcon
 from PyQt5.QtWidgets import (
+    QActionGroup,
     QApplication,
     QFrame,
     QLabel,
@@ -23,7 +24,7 @@ from ..globalvariables import (
     TAKSBAR_HEIGHT,
 )
 from ..nowplaying import NowPlayingSpicetify, NowPlayingSystem
-from ..themes import get_style, load_themes
+from ..themes import STYLES, DEFAULT_THEME, get_style, load_themes
 from ..utils.dataclasses import PlayingStatusTrigger
 from ..utils.tools import check_if_windows_locked
 from .components.lyriclabel import LyricLabel
@@ -463,6 +464,44 @@ class SystemTrayIcon(QSystemTrayIcon):
         exitAction = menu.addAction("Exit")
         swtichDesktopAction = menu.addAction("Switch Desktop")
         reloadThemeAction = menu.addAction("Reload Themes")
+
+        menu.addSeparator()
+        themeMenu = menu.addMenu("Themes")
+        themeGroup = QActionGroup(self)
+        themeGroup.setExclusive(True)
+
+        def switch_theme(name):
+            if os.path.exists("settings.yaml"):
+                try:
+                    with open("settings.yaml", "r", encoding="utf-8") as f:
+                        content = f.read()
+                    import re
+                    new_content = re.sub(
+                        r'(Default:\s*)["\'].*?["\']',
+                        rf'\1"{name}"',
+                        content,
+                    )
+                    with open("settings.yaml", "w", encoding="utf-8") as f:
+                        f.write(new_content)
+                except Exception as e:
+                    logging.error(f"Failed to update settings.yaml: {e}")
+
+            load_themes()
+            parent.updateStyle(
+                get_style(parent.now_playing.current_track), force_reload=True
+            )
+            parent.toast(f"Theme: {name}")
+
+        for theme_key in STYLES.keys():
+            if theme_key == "default":
+                continue
+            action = themeMenu.addAction(theme_key)
+            action.setCheckable(True)
+            if theme_key == DEFAULT_THEME:
+                action.setChecked(True)
+            themeGroup.addAction(action)
+            action.triggered.connect(lambda checked, k=theme_key: switch_theme(k))
+
         self.setContextMenu(menu)
         exitAction.triggered.connect(self.exit)
         swtichDesktopAction.triggered.connect(lambda: parent.switchDesktop(True))

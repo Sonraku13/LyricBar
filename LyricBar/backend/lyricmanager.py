@@ -173,21 +173,45 @@ class FromSpotify(LyricsProvider):
             return None
         return Lyrics.from_json(lyrics, track)
         
+def _is_clean_title(title: str):
+    import re
+    # Remove bracketed noise like (Official Video), (Lyrics), [MV], (Remastered 2021), etc.
+    cleaned = re.sub(r"[\(\[\{].*?(official|video|audio|mv|remaster|lyrics|clip|4k|hd|feat|ft\.).*?[\)\]\}]", "", title, flags=re.IGNORECASE)
+    # Remove trailing leftovers like "- Official Video"
+    cleaned = re.sub(r"\s*-\s*(official|video|audio|mv|lyrics).*$", "", cleaned, flags=re.IGNORECASE)
+    return cleaned.strip() or title
+
+
 class FromThirdParty(LyricsProvider):
-    def __init__(self, third_parties=["Lrclib", "NetEase", "Musixmatch"]):
+    def __init__(self, third_parties=["Lrclib", "NetEase", "Musixmatch", "Deezer", "Megalobiz"]):
         self.third_parties = third_parties
     
     def get_lyrics(self, track: TrackInfo) -> Lyrics:
         lrc = None
+        # Attempt 1: search with current track as-is
         try:
             lrc = syncedlyrics.search(track, allow_plain_format=False, providers=self.third_parties, enhanced=False)
         except Exception as e:
-            logging.error(e)
+            logging.error(f"Search error: {e}")
+
+        # Attempt 2: if failed, try with cleaned title (common for YouTube Music / Video titles)
+        if not lrc and track.title:
+            clean_t = _is_clean_title(track.title)
+            if clean_t != track.title:
+                clean_track = TrackInfo(
+                    artist=track.artist,
+                    title=clean_t,
+                    length=track.length,
+                    is_music=track.is_music,
+                )
+                try:
+                    lrc = syncedlyrics.search(clean_track, allow_plain_format=False, providers=self.third_parties, enhanced=False)
+                except Exception as e:
+                    logging.error(f"Fallback search error: {e}")
+
         if lrc is None:
             return None
         lyrics = Lyrics.from_lrc(lrc, track)
-        if lyrics.artist is not None and lyrics.artist!= track.artist or lyrics.title is not None and lyrics.title!= track.title:
-            return None
         return lyrics
 
 class LyricsThread(QThread):

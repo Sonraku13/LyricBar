@@ -3,9 +3,9 @@ Proxy:
   Port: 7890
 
 Appearance:
-  Taskbar Height: 70
+  Taskbar Height: 48
   # Adjust this so the system tray icons are not covered
-  Leftout Width: 600
+  Leftout Width: 350
 
 Lyrics:
   Folder: lyrics
@@ -42,6 +42,10 @@ Playing Info:
   # Provider: System
   # If use System, you need to set the tracking application. Here are some examples:
   #     Tracking App: Spotify.exe   # For Spotify
+  #     Tracking App: msedge.exe    # For YouTube Music on Edge
+  #     Tracking App: chrome.exe    # For YouTube Music on Chrome
+  #     Tracking App: brave.exe     # For YouTube Music on Brave
+  #     Tracking App: any           # Auto-track any active media player
   #     Tracking App: AppleInc.AppleMusicWin_nzyj5cx40ttqa!App   # For Apple Music
   #     Tracking App: F0DC299D809B9700   # For Zen Browser
   #     Tracking App: TheBrowserCompany.Arc_ttt1ap7aakyb4!Arc  # For Arc Browser
@@ -50,4 +54,4 @@ Themes:
   Folder: themes
 
   # Format "{relative file path minus '.py'} - {theme name}"
-  Default: "Default - LyricBar theme"
+  Default: "Default - white"

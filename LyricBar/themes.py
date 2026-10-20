@@ -62,7 +62,10 @@ def search_py(rootdir):
     return file_list
 
 def load_themes():
-    global STYLES
+    import LyricBar.globalvariables as gv
+    gv.reload_settings()
+    global DEFAULT_THEME, STYLES
+    DEFAULT_THEME = gv.DEFAULT_THEME
     STYLES = {
         "default": {
             "background-color": "#00000000",
