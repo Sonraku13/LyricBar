@@ -38,6 +38,7 @@ def _ttml_to_lrc(ttml_text):
         begin = match.group(1)
         inner = match.group(2)
         text = tag_pattern.sub('', inner).strip()
+        text = re.sub(r"[ \t]+", " ", text).strip()
         if not text:
             continue
         parts = begin.split(':')

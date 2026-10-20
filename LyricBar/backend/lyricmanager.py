@@ -51,7 +51,12 @@ class LyricLine:
             return cls(int(minutes) * 60000 + int(seconds) * 1000, text)
          
     def clean_text(self, text):
-        text = text.strip()
+        if not text:
+            return ""
+        # Strip enhanced LRC / syllable tags like <02:54.80> or any XML/HTML tags
+        text = re.sub(r"<[^>]+>", "", text)
+        # Collapse multiple spaces
+        text = re.sub(r"[ \t]+", " ", text).strip()
         text = text.replace(u"е", "e")
         text = text.replace(u"a", "a")
         return text
