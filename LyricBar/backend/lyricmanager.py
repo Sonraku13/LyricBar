@@ -183,18 +183,36 @@ def _is_clean_title(title: str):
 
 
 class FromThirdParty(LyricsProvider):
-    def __init__(self, third_parties=["Lrclib", "NetEase", "Musixmatch", "Deezer", "Megalobiz"]):
+    def __init__(self, third_parties=["Lrclib", "NetEase", "Musixmatch", "Deezer", "Megalobiz", "Genius"]):
         self.third_parties = third_parties
     
     def get_lyrics(self, track: TrackInfo) -> Lyrics:
+        from .lyrics_providers import search_multi_source
         lrc = None
-        # Attempt 1: search with current track as-is
-        try:
-            lrc = syncedlyrics.search(track, allow_plain_format=False, providers=self.third_parties, enhanced=False)
-        except Exception as e:
-            logging.error(f"Search error: {e}")
+        source_name = "ThirdParty"
 
-        # Attempt 2: if failed, try with cleaned title (common for YouTube Music / Video titles)
+        # Step 1: Direct multi-source API providers (LRCLIB, lrc.red, LyricsPlus, BiniLyrics, Unison, BetterLyrics, KuGou, PaxSenix, SimpMusic)
+        if track.title:
+            lrc, prov = search_multi_source(track.title, track.artist, track.length)
+            if prov:
+                source_name = prov
+
+        # Step 2: Try with cleaned title if direct failed
+        if not lrc and track.title:
+            clean_t = _is_clean_title(track.title)
+            if clean_t != track.title:
+                lrc, prov = search_multi_source(clean_t, track.artist, track.length)
+                if prov:
+                    source_name = prov
+
+        # Step 3: Syncedlyrics provider fallbacks (NetEase, Musixmatch, Megalobiz, Genius, Deezer, etc.)
+        if not lrc:
+            try:
+                lrc = syncedlyrics.search(track, allow_plain_format=False, providers=self.third_parties, enhanced=False)
+            except Exception as e:
+                logging.error(f"Search error: {e}")
+
+        # Step 4: Syncedlyrics with cleaned title
         if not lrc and track.title:
             clean_t = _is_clean_title(track.title)
             if clean_t != track.title:
@@ -212,6 +230,7 @@ class FromThirdParty(LyricsProvider):
         if lrc is None:
             return None
         lyrics = Lyrics.from_lrc(lrc, track)
+        lyrics.source = source_name
         return lyrics
 
 class LyricsThread(QThread):
